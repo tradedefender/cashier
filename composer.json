@@ -1,12 +1,16 @@
 {
-    "name": "laravel/cashier",
-    "description": "Laravel Cashier provides an expressive, fluent interface to Stripe's subscription billing services.",
+    "name": "tradedefender/cashier",
+    "description": "Laravel Cashier with changes deemed appropriate by Trade Defender",
     "keywords": ["laravel", "stripe", "billing"],
     "license": "MIT",
     "authors": [
         {
             "name": "Taylor Otwell",
             "email": "taylorotwell@gmail.com"
+        },
+        {
+          "name": "Jacob Ray Gilman",
+          "email": "jacob@tradedefender.com"
         }
     ],
     "require": {
@@ -28,12 +32,12 @@
     },
     "autoload": {
         "psr-4": {
-            "Laravel\\Cashier\\": "src/"
+            "TradeDefender\\Cashier\\": "src/"
         }
     },
     "extra": {
         "branch-alias": {
-            "dev-master": "6.0-dev"
+            "dev-master": "6.0"
         }
     }
 }
