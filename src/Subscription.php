@@ -9,6 +9,9 @@ use Illuminate\Database\Eloquent\Model;
 
 class Subscription extends Model
 {
+
+    protected $connection = env('CASHIER_CONNECTION');
+
     /**
      * The attributes that aren't mass assignable.
      *
@@ -161,7 +164,7 @@ class Subscription extends Model
         $subscription = $this->asStripeSubscription();
 
         $subscription->quantity = $quantity;
-        
+
         $subscription->prorate = $this->prorate;
 
         $subscription->save();
