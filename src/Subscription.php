@@ -42,6 +42,7 @@ class Subscription extends Model
     protected $billingCycleAnchor = null;
 
     public function __construct(){
+      parent::__construct();
       $this->setConnection(env('CASHIER_CONNECTION'));
     }
 
