@@ -235,6 +235,10 @@ class SubscriptionBuilder
         if ($this->trialDays) {
             return Carbon::now()->addDays($this->trialDays)->getTimestamp();
         }
+
+        if ($this->user->onGenericTrial()) {
+            return $this->user->trial_ends_at;
+        }
     }
 
     /**
