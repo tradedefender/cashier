@@ -5,12 +5,14 @@ namespace Laravel\Cashier;
 use Exception;
 use Carbon\Carbon;
 use InvalidArgumentException;
+use Stripe\Card as StripeCard;
 use Stripe\Token as StripeToken;
+use Illuminate\Support\Collection;
 use Stripe\Charge as StripeCharge;
 use Stripe\Refund as StripeRefund;
-use Illuminate\Support\Collection;
 use Stripe\Invoice as StripeInvoice;
 use Stripe\Customer as StripeCustomer;
+use Stripe\BankAccount as StripeBankAccount;
 use Stripe\InvoiceItem as StripeInvoiceItem;
 use Stripe\Error\InvalidRequest as StripeErrorInvalidRequest;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -31,7 +33,7 @@ trait Billable
      * @param  array  $options
      * @return \Stripe\Charge
      *
-     * @throws \Stripe\Error\Card
+     * @throws \InvalidArgumentException
      */
     public function charge($amount, array $options = [])
     {
@@ -59,7 +61,7 @@ trait Billable
      * @param  array  $options
      * @return \Stripe\Charge
      *
-     * @throws \Stripe\Error\Refund
+     * @throws \InvalidArgumentException
      */
     public function refund($charge, array $options = [])
     {
@@ -79,19 +81,19 @@ trait Billable
     }
 
     /**
-     * Invoice the customer for the given amount.
+     * Add an invoice item to the customer's upcoming invoice.
      *
      * @param  string  $description
      * @param  int  $amount
      * @param  array  $options
-     * @return bool
+     * @return \Stripe\InvoiceItem
      *
-     * @throws \Stripe\Error\Card
+     * @throws \InvalidArgumentException
      */
-    public function invoiceFor($description, $amount, array $options = [])
+    public function tab($description, $amount, array $options = [])
     {
         if (! $this->stripe_id) {
-            throw new InvalidArgumentException('User is not a customer. See the createAsStripeCustomer method.');
+            throw new InvalidArgumentException(class_basename($this).' is not a Stripe customer. See the createAsStripeCustomer method.');
         }
 
         $options = array_merge([
@@ -101,9 +103,22 @@ trait Billable
             'description' => $description,
         ], $options);
 
-        StripeInvoiceItem::create(
+        return StripeInvoiceItem::create(
             $options, ['api_key' => $this->getStripeKey()]
         );
+    }
+
+    /**
+     * Invoice the customer for the given amount and generate an invoice immediately.
+     *
+     * @param  string  $description
+     * @param  int  $amount
+     * @param  array  $options
+     * @return \Laravel\Cashier\Invoice|bool
+     */
+    public function invoiceFor($description, $amount, array $options = [])
+    {
+        $this->tab($description, $amount, $options);
 
         return $this->invoice();
     }
@@ -121,7 +136,7 @@ trait Billable
     }
 
     /**
-     * Determine if the user is on trial.
+     * Determine if the Stripe model is on trial.
      *
      * @param  string  $subscription
      * @param  string|null  $plan
@@ -144,7 +159,7 @@ trait Billable
     }
 
     /**
-     * Determine if the user is on a "generic" trial at the user level.
+     * Determine if the Stripe model is on a "generic" trial at the model level.
      *
      * @return bool
      */
@@ -154,7 +169,7 @@ trait Billable
     }
 
     /**
-     * Determine if the user has a given subscription.
+     * Determine if the Stripe model has a given subscription.
      *
      * @param  string  $subscription
      * @param  string|null  $plan
@@ -193,19 +208,19 @@ trait Billable
     }
 
     /**
-     * Get all of the subscriptions for the user.
+     * Get all of the subscriptions for the Stripe model.
      *
      * @return \Illuminate\Database\Eloquent\Collection
      */
     public function subscriptions()
     {
-        return $this->hasMany(Subscription::class, 'user_id')->orderBy('created_at', 'desc');
+        return $this->hasMany(Subscription::class, $this->getForeignKey())->orderBy('created_at', 'desc');
     }
 
     /**
      * Invoice the billable entity outside of regular billing cycle.
      *
-     * @return StripeInvoice|bool
+     * @return \Stripe\Invoice|bool
      */
     public function invoice()
     {
@@ -274,7 +289,7 @@ trait Billable
      * Create an invoice download Response.
      *
      * @param  string  $id
-     * @param  array   $data
+     * @param  array  $data
      * @param  string  $storagePath
      * @return \Symfony\Component\HttpFoundation\Response
      */
@@ -324,6 +339,31 @@ trait Billable
     }
 
     /**
+     * Get a collection of the entity's cards.
+     *
+     * @param  array  $parameters
+     * @return \Illuminate\Support\Collection
+     */
+    public function cards($parameters = [])
+    {
+        $cards = [];
+
+        $parameters = array_merge(['limit' => 24], $parameters);
+
+        $stripeCards = $this->asStripeCustomer()->sources->all(
+            ['object' => 'card'] + $parameters
+        );
+
+        if (! is_null($stripeCards)) {
+            foreach ($stripeCards->data as $card) {
+                $cards[] = new Card($this, $card);
+            }
+        }
+
+        return new Collection($cards);
+    }
+
+    /**
      * Update customer's credit card.
      *
      * @param  string  $token
@@ -337,8 +377,8 @@ trait Billable
 
         // If the given token already has the card as their default source, we can just
         // bail out of the method now. We don't need to keep adding the same card to
-        // the user's account each time we go through this particular method call.
-        if ($token->card->id === $customer->default_source) {
+        // a model's account every time we go through this particular method call.
+        if ($token[$token->type]->id === $customer->default_source) {
             return;
         }
 
@@ -348,9 +388,9 @@ trait Billable
 
         $customer->save();
 
-        // Next, we will get the default source for this user so we can update the last
-        // four digits and the card brand on this user record in the database, which
-        // is convenient when displaying on the front-end when updating the cards.
+        // Next we will get the default source for this model so we can update the last
+        // four digits and the card brand on the record in the database. This allows
+        // us to display the information on the front-end when updating the cards.
         $source = $customer->default_source
                     ? $customer->sources->retrieve($customer->default_source)
                     : null;
@@ -391,19 +431,34 @@ trait Billable
     }
 
     /**
-     * Fills the user's properties with the source from Stripe.
+     * Fills the model's properties with the source from Stripe.
      *
-     * @param \Stripe\Card|null  $card
+     * @param  \Stripe\Card|\Stripe\BankAccount|null  $card
      * @return $this
      */
     protected function fillCardDetails($card)
     {
-        if ($card) {
+        if ($card instanceof StripeCard) {
             $this->card_brand = $card->brand;
+            $this->card_last_four = $card->last4;
+        } elseif ($card instanceof StripeBankAccount) {
+            $this->card_brand = 'Bank Account';
             $this->card_last_four = $card->last4;
         }
 
         return $this;
+    }
+
+    /**
+     * Deletes the entity's cards.
+     *
+     * @return void
+     */
+    public function deleteCards()
+    {
+        $this->cards()->each(function ($card) {
+            $card->delete();
+        });
     }
 
     /**
@@ -422,7 +477,7 @@ trait Billable
     }
 
     /**
-     * Determine if the user is actively subscribed to one of the given plans.
+     * Determine if the Stripe model is actively subscribed to one of the given plans.
      *
      * @param  array|string  $plans
      * @param  string  $subscription
@@ -469,11 +524,11 @@ trait Billable
     }
 
     /**
-     * Create a Stripe customer for the given user.
+     * Create a Stripe customer for the given Stripe model.
      *
      * @param  string  $token
      * @param  array  $options
-     * @return StripeCustomer
+     * @return \Stripe\Customer
      */
     public function createAsStripeCustomer($token, array $options = [])
     {
@@ -502,7 +557,7 @@ trait Billable
     }
 
     /**
-     * Get the Stripe customer for the user.
+     * Get the Stripe customer for the Stripe model.
      *
      * @return \Stripe\Customer
      */
