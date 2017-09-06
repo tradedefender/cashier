@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Subscription extends Model
 {
+
     /**
      * The attributes that aren't mass assignable.
      *
@@ -39,6 +40,11 @@ class Subscription extends Model
      * @var string|null
      */
     protected $billingCycleAnchor = null;
+
+    public function __construct(array $attributes = []){
+      parent::__construct($attributes);
+      $this->setConnection(env('CASHIER_CONNECTION'));
+    }
 
     /**
      * Get the user that owns the subscription.
@@ -161,6 +167,8 @@ class Subscription extends Model
         $subscription = $this->asStripeSubscription();
 
         $subscription->quantity = $quantity;
+
+        $subscription->prorate = $this->prorate;
 
         $subscription->save();
 

@@ -168,7 +168,8 @@ class SubscriptionBuilder
         if ($this->skipTrial) {
             $trialEndsAt = null;
         } else {
-            $trialEndsAt = $this->trialDays ? Carbon::now()->addDays($this->trialDays) : null;
+            $trialEndsAt = $subscription->trial_end ? Carbon::createFromTimestampUTC($subscription->trial_end)
+                ->toDateTimeString() : null;
         }
 
         return $this->user->subscriptions()->create([
@@ -191,9 +192,7 @@ class SubscriptionBuilder
     protected function getStripeCustomer($token = null, array $options = [])
     {
         if (! $this->user->stripe_id) {
-            $customer = $this->user->createAsStripeCustomer(
-                $token, array_merge($options, array_filter(['coupon' => $this->coupon]))
-            );
+            $customer = $this->user->createAsStripeCustomer($token, $options);
         } else {
             $customer = $this->user->asStripeCustomer();
 
@@ -235,6 +234,10 @@ class SubscriptionBuilder
 
         if ($this->trialDays) {
             return Carbon::now()->addDays($this->trialDays)->getTimestamp();
+        }
+
+        if ($this->user->onGenericTrial()) {
+            return $this->user->trial_ends_at->getTimestamp();
         }
     }
 
