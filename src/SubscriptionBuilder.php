@@ -249,8 +249,8 @@ class SubscriptionBuilder
             return $this->trialExpires->getTimestamp();
         }
 
-        if ($this->user->onGenericTrial()) {
-            return $this->user->trial_ends_at->getTimestamp();
+        if ($this->owner->onGenericTrial()) {
+            return $this->owner->trial_ends_at->getTimestamp();
         }
     }
 
